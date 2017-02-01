@@ -51,8 +51,6 @@ pub struct PushOptions<'cb> {
 }
 
 /// Holds callbacks for a connection to a `Remote`. Disconnects when dropped
-// To prevent use after free for the callbacks for the lifetime of the remote connection
-#[allow(dead_code)]
 pub struct RemoteConnection<'repo, 'connection, 'cb> where 'repo: 'connection {
     callbacks: RemoteCallbacks<'cb>,
     proxy: ProxyOptions<'cb>,
@@ -614,19 +612,28 @@ mod tests {
         let url = ::test::path2url(&td.path());
 
         let repo = Repository::init(td2.path()).unwrap();
-        let callbacks = RemoteCallbacks::new();
-        let mut origin = repo.remote("origin", &url).unwrap();
+        let progress_hit = Cell::new(false);
+        {
+            let mut callbacks = RemoteCallbacks::new();
+            let mut origin = repo.remote("origin", &url).unwrap();
 
-        let _connection = origin.connect(Direction::Fetch, Some(callbacks), None);
+            callbacks.sideband_progress(|_progress| {
+                progress_hit.set(true);
+                true
+            });
 
-        origin.fetch(&[], None, None).unwrap(); // should not SIGSEGV
+            let _connection = origin.connect(Direction::Fetch, Some(callbacks), None);
 
-        let list = t!(origin.list());
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0].name(), "HEAD");
-        assert!(!list[0].is_local());
-        assert_eq!(list[1].name(), "refs/heads/master");
-        assert!(!list[1].is_local());
+            origin.fetch(&[], None, None).unwrap();
+
+            let list = t!(origin.list());
+            assert_eq!(list.len(), 2);
+            assert_eq!(list[0].name(), "HEAD");
+            assert!(!list[0].is_local());
+            assert_eq!(list[1].name(), "refs/heads/master");
+            assert!(!list[1].is_local());
+        }
+        assert!(progress_hit.get());
     }
 
     #[test]
