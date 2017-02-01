@@ -54,8 +54,8 @@ pub struct PushOptions<'cb> {
 // To prevent use after free for the callbacks for the lifetime of the remote connection
 #[allow(dead_code)]
 pub struct RemoteConnection<'repo, 'connection, 'cb> where 'repo: 'connection {
-    callbacks: Option<RemoteCallbacks<'cb>>,
-    proxy: Option<ProxyOptions<'cb>>,
+    callbacks: RemoteCallbacks<'cb>,
+    proxy: ProxyOptions<'cb>,
     remote_raw: *mut raw::git_remote,
     _marker: marker::PhantomData<&'connection Remote<'repo>>,
 }
@@ -116,23 +116,20 @@ impl<'repo> Remote<'repo> {
                                  proxy_options: Option<ProxyOptions<'cb>>)
                     -> Result<RemoteConnection<'repo, 'connection, 'cb>, Error> {
 
-        let cb_raw = cb.as_ref().map(|m| &m.raw() as *const raw::git_remote_callbacks)
-                       .unwrap_or_else(|| 0 as *const _);
-        let proxy_raw = proxy_options.as_ref().map(|m| &m.raw() as *const raw::git_proxy_options)
-                            .unwrap_or_else(|| 0 as *const _);
+        let connection = RemoteConnection {
+                            callbacks: cb.unwrap_or_else(|| RemoteCallbacks::new()),
+                            proxy: proxy_options.unwrap_or_else(|| ProxyOptions::new()),
+                            remote_raw: self.raw.clone(),
+                            _marker: marker::PhantomData
+                         };
         unsafe {
             try_call!(raw::git_remote_connect(self.raw, dir,
-                                              cb_raw,
-                                              proxy_raw,
+                                              &connection.callbacks.raw(),
+                                              &connection.proxy.raw(),
                                               0 as *const _));
         }
 
-        Ok(RemoteConnection::<'repo, 'connection, 'cb> {
-            callbacks: cb,
-            proxy: proxy_options,
-            remote_raw: self.raw.clone(),
-            _marker: marker::PhantomData
-        })
+        Ok(connection)
     }
 
     /// Check whether the remote is connected
