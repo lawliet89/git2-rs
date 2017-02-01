@@ -544,7 +544,6 @@ mod tests {
         {
             let _connection = origin.connect(Direction::Fetch, None, None).unwrap();
             assert!(origin.connected());
-            origin.download(&[], None).unwrap();
         }
         assert!(!origin.connected());
 
@@ -609,6 +608,28 @@ mod tests {
             assert!(!list[1].is_local());
         }
         assert!(progress_hit.get());
+    }
+
+    #[test]
+    fn connect_cb() {
+        let (td, _repo) = ::test::repo_init();
+        let td2 = TempDir::new("git").unwrap();
+        let url = ::test::path2url(&td.path());
+
+        let repo = Repository::init(td2.path()).unwrap();
+        let callbacks = RemoteCallbacks::new();
+        let mut origin = repo.remote("origin", &url).unwrap();
+
+        let _connection = origin.connect(Direction::Fetch, Some(callbacks), None);
+
+        origin.fetch(&[], None, None).unwrap(); // should not SIGSEGV
+
+        let list = t!(origin.list());
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name(), "HEAD");
+        assert!(!list[0].is_local());
+        assert_eq!(list[1].name(), "refs/heads/master");
+        assert!(!list[1].is_local());
     }
 
     #[test]
